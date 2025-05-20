@@ -1,3 +1,4 @@
 streamlit_folium
 plotly
 yfinance
+pandas==1.5.3
