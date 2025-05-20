@@ -2,25 +2,36 @@ import streamlit as st
 import folium
 from streamlit_folium import st_folium
 
-st.title("🗺️ 나만의 위치 북마크 지도")
+# 미국 50개 주의 이름과 위도, 경도 데이터 (예시로 몇 개만 추가)
+states_data = {
+    "Alabama": [32.806671, -86.791130],
+    "Alaska": [61.370716, -149.493686],
+    "Arizona": [33.729759, -111.431221],
+    "Arkansas": [34.969704, -92.373123],
+    "California": [36.116203, -119.681564],
+    "Colorado": [39.059811, -105.311104],
+    "Connecticut": [41.597782, -72.755371],
+    "Delaware": [38.66597, -75.74319],
+    "Florida": [27.766279, -81.686783],
+    "Georgia": [33.040619, -83.643074],
+    "Hawaii": [21.094318, -157.498337],
+    # ... (나머지 40개 주를 여기에 추가하세요)
+}
 
-st.write("아래에 장소 정보를 입력하고 지도에 표시해보세요!")
+# 스트림릿 앱 제목
+st.title("🇺🇸 미국 50개 주 지도")
 
-# 장소 입력
-place = st.text_input("장소 이름", value="서울 시청")
-lat = st.number_input("위도 (Latitude)", value=37.5665, format="%.6f")
-lon = st.number_input("경도 (Longitude)", value=126.9780, format="%.6f")
+# 상태 선택
+state = st.selectbox("주를 선택하세요:", list(states_data.keys()))
 
-# 세션 상태 저장
-if "places" not in st.session_state:
-    st.session_state.places = []
+# 선택된 주의 위도와 경도
+lat, lon = states_data[state]
 
-if st.button("지도에 추가하기"):
-    st.session_state.places.append((place, lat, lon))
+# 지도 생성
+m = folium.Map(location=[lat, lon], zoom_start=5)
 
-# 지도 그리기
-m = folium.Map(location=[37.5665, 126.9780], zoom_start=6)
-for name, lat, lon in st.session_state.places:
-    folium.Marker([lat, lon], tooltip=name).add_to(m)
+# 선택된 주에 마커 추가
+folium.Marker([lat, lon], tooltip=state).add_to(m)
 
+# 지도 표시
 st_folium(m, width=700, height=500)
