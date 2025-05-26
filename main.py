@@ -1,37 +1,44 @@
 import streamlit as st
 import folium
+import requests
 from streamlit_folium import st_folium
 
-# 미국 50개 주의 이름과 위도, 경도 데이터 (예시로 몇 개만 추가)
-states_data = {
-    "Alabama": [32.806671, -86.791130],
-    "Alaska": [61.370716, -149.493686],
-    "Arizona": [33.729759, -111.431221],
-    "Arkansas": [34.969704, -92.373123],
-    "California": [36.116203, -119.681564],
-    "Colorado": [39.059811, -105.311104],
-    "Connecticut": [41.597782, -72.755371],
-    "Delaware": [38.66597, -75.74319],
-    "Florida": [27.766279, -81.686783],
-    "Georgia": [33.040619, -83.643074],
-    "Hawaii": [21.094318, -157.498337],
-    # ... (나머지 40개 주를 여기에 추가하세요)
-}
+# 미국 50개 주의 GeoJSON 파일 URL (여기서는 공개된 GeoJSON 파일을 사용)
+geojson_url = "https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.geojson"
 
-# 스트림릿 앱 제목
-st.title("🇺🇸 미국 50개 주 지도")
+# Streamlit 앱 제목
+st.title("🇺🇸 미국 50개 주 경계 색상 지도")
 
-# 상태 선택
-state = st.selectbox("주를 선택하세요:", list(states_data.keys()))
+# 주 선택
+state = st.selectbox("주를 선택하세요:", ['전체', 'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware', 'Florida', 'Georgia', 'Hawaii'])
 
-# 선택된 주의 위도와 경도
-lat, lon = states_data[state]
+# GeoJSON 데이터 가져오기
+response = requests.get(geojson_url)
+geojson_data = response.json()
 
-# 지도 생성
-m = folium.Map(location=[lat, lon], zoom_start=5)
+# 지도 생성 (기본 지도 설정)
+m = folium.Map(location=[37.0902, -95.7129], zoom_start=5)
 
-# 선택된 주에 마커 추가
-folium.Marker([lat, lon], tooltip=state).add_to(m)
+# 경계 색상 적용 함수
+def style_function(feature):
+    # 'state' 속성에 따라 색상을 다르게 설정
+    if state == '전체' or feature['properties']['name'] == state:
+        return {
+            'fillColor': 'green',  # 선택된 주나 전체는 초록색
+            'color': 'black',      # 경계선 색은 검정
+            'weight': 2,
+            'fillOpacity': 0.6
+        }
+    else:
+        return {
+            'fillColor': 'gray',   # 나머지 주는 회색
+            'color': 'black',
+            'weight': 1,
+            'fillOpacity': 0.3
+        }
 
-# 지도 표시
+# GeoJSON 데이터를 지도에 추가
+folium.GeoJson(geojson_data, style_function=style_function).add_to(m)
+
+# Streamlit에 지도 표시
 st_folium(m, width=700, height=500)
