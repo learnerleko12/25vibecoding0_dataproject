@@ -100,8 +100,8 @@ st.markdown("""
 # --- GitHub Raw CSV URL 설정 ---
 # 중요: 아래 URL을 실제 GitHub Raw 파일 주소로 변경해주세요.
 # 예시: GITHUB_TOTAL_POP_URL = "https://raw.githubusercontent.com/your_username/your_repository/main/path/to/your_total_pop_file.csv"
-GITHUB_TOTAL_POP_URL = "https://raw.githubusercontent.com/Statground/Public-Data-Storage/main/Age_Gender_Population/202504_202504_%EC%97%B0%EB%A0%B9%EB%B3%84%EC%9D%B8%EA%B5%AC%ED%98%84%ED%99%A9_%EC%9B%94%EA%B0%84_%EB%82%A8%EB%85%80%ED%95%A9%EA%B3%84.csv" # 예시 URL, 실제 URL로 변경 필요
-GITHUB_GENDER_POP_URL = "https://raw.githubusercontent.com/Statground/Public-Data-Storage/main/Age_Gender_Population/202504_202504_%EC%97%B0%EB%A0%B9%EB%B3%84%EC%9D%B8%EA%B5%AC%ED%98%84%ED%99%A9_%EC%9B%94%EA%B0%84%20_%EB%82%A8%EB%85%80%EA%B5%AC%EB%B6%84.csv" # 예시 URL, 실제 URL로 변경 필요
+GITHUB_TOTAL_POP_URL = "202504_202504_연령별인구현황_월간 _남녀구분.csv" # 예시 URL, 실제 URL로 변경 필요
+GITHUB_GENDER_POP_URL = "202504_202504_연령별인구현황_월간 _남녀구분.csv" # 예시 URL, 실제 URL로 변경 필요
 
 st.sidebar.markdown("### 데이터 소스")
 st.sidebar.info(f"""
