@@ -1,28 +1,40 @@
-import streamlit as st
-import plotly.express as px
 import pandas as pd
+import plotly.express as px
 
-# Load the data (you can replace this with your actual data loading logic)
-df1 = pd.read_csv('/mnt/data/202504_202504_연령별인구현황_남녀합계.csv', encoding='cp949')
+# Load the data from the CSV file with proper encoding
+file_path = '분202504_202504_연령별인구현황_월간 _남녀구분.csv'
+data = pd.read_csv(file_path, encoding='cp949')
 
-# Set up Streamlit UI
-st.title('서울특별시 인구 데이터 시각화')
-st.write('연령별, 성별로 서울특별시의 인구 데이터를 시각화한 그래프입니다.')
+# Extract the rows for 서울특별시
+seoul_data = data[data['행정구역'].str.contains('서울특별시')]
 
-# Let the user select a region from the list
-region = st.selectbox('지역을 선택하세요:', df1['행정구역'].unique())
+# Extract age columns for male and female separately
+male_columns = [col for col in seoul_data.columns if '남자' in col]
+female_columns = [col for col in seoul_data.columns if '여자' in col]
 
-# Filter the dataframe based on the selected region
-df_region = df1[df1['행정구역'] == region]
+# Aggregate the male and female populations by age
+male_population = seoul_data[male_columns].sum()
+female_population = seoul_data[female_columns].sum()
 
-# Let the user select the age group
-age_group = st.selectbox('연령대를 선택하세요:', [col for col in df_region.columns if '계_' in col])
+# Extract age labels from columns
+age_labels = [col.split()[0] for col in male_columns]
 
-# Filter columns for the selected age group
-df_plot = df_region[['행정구역', age_group]]
+# Create a DataFrame for the population pyramid
+population_pyramid = pd.DataFrame({
+    'Age': age_labels,
+    'Male': male_population.values,
+    'Female': female_population.values
+})
 
-# Create a line chart using Plotly
-fig = px.line(df_plot, x='행정구역', y=age_group, title=f'{region}의 {age_group} 인구 수')
+# Create the population pyramid using Plotly
+fig = px.bar(population_pyramid, 
+             x='Age', 
+             y=['Male', 'Female'], 
+             orientation='h', 
+             title='Population Pyramid (Male vs Female)',
+             labels={'value': 'Population', 'Age': 'Age'},
+             barmode='overlay')
 
 # Show the plot
-st.plotly_chart(fig)
+fig.show()
+
