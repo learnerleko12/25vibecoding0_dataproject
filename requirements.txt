@@ -4,3 +4,4 @@ plotly
 yfinance
 pandas
 requests
+koreanize-matplotlib
