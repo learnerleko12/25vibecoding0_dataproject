@@ -29,6 +29,9 @@ def load_data(file_path, is_gender_separated=False):
         st.error(f"{file_path} 파일을 찾을 수 없습니다. 동일한 디렉토리에 파일이 있는지 확인하세요.")
         return None
 
+    if df is None: # 파일 로드 실패 시
+        return None
+
     # 첫 번째 열 이름을 '행정구역'으로 표준화 (실제 파일에 따라 다를 수 있음)
     if df.columns[0] != '행정구역':
         df.rename(columns={df.columns[0]: '행정구역'}, inplace=True)
@@ -56,6 +59,35 @@ def get_age_columns(df_columns, prefix):
     
     return sorted(age_cols, key=age_sort_key)
 
+# 연령대별 인구 집계 함수
+def get_population_by_age_category(age_population_series):
+    youth_pop = 0  # 0-14세
+    working_age_pop = 0  # 15-64세
+    elderly_pop = 0  # 65세 이상
+
+    for age_label, pop in age_population_series.items():
+        # age_label is like '0세', '1세', ..., '100세 이상'
+        try:
+            # Extract numeric part of age
+            age_numeric_str_match = re.match(r"(\d+)", age_label)
+            if age_numeric_str_match:
+                age = int(age_numeric_str_match.group(1))
+            else: 
+                st.warning(f"연령 라벨 '{age_label}'에서 숫자 부분을 추출하지 못했습니다. 이 데이터는 집계에서 제외됩니다.")
+                continue
+
+            if 0 <= age <= 14:
+                youth_pop += pop
+            elif 15 <= age <= 64:
+                working_age_pop += pop
+            elif age >= 65: # This includes '100세 이상' correctly if age is parsed as 100
+                elderly_pop += pop
+        except ValueError:
+            st.warning(f"연령 라벨 '{age_label}'을(를) 처리하는 중 오류 발생. 이 데이터는 집계에서 제외됩니다.")
+            continue
+            
+    total_pop_for_categories = youth_pop + working_age_pop + elderly_pop
+    return youth_pop, working_age_pop, elderly_pop, total_pop_for_categories
 
 # --- 스트림릿 앱 UI 구성 ---
 st.set_page_config(layout="wide", page_title="대한민국 인구 현황 대시보드")
@@ -70,9 +102,6 @@ st.markdown("""
 uploaded_file_total = st.sidebar.file_uploader("1. 남녀 합계 인구 데이터 (CSV)", type="csv", key="total_pop_uploader")
 uploaded_file_gender = st.sidebar.file_uploader("2. 남녀 구분 인구 데이터 (CSV)", type="csv", key="gender_pop_uploader")
 
-# 기본 파일 경로 설정 (업로드된 파일이 없을 경우 사용)
-# 중요: 이 파일들은 Streamlit 앱을 실행하는 Python 스크립트와 동일한 디렉토리에 있어야 합니다.
-# 또는, 정확한 파일 경로를 지정해야 합니다.
 DEFAULT_TOTAL_POP_FILE = '202504_202504_연령별인구현황_월간_남녀합계.csv'
 DEFAULT_GENDER_POP_FILE = '202504_202504_연령별인구현황_월간 _남녀구분.csv'
 
@@ -93,7 +122,6 @@ else:
 
 
 if df_total_pop is not None and df_gender_pop is not None:
-    # 행정구역 선택
     admin_districts = df_total_pop.index.tolist()
     if not admin_districts:
         st.error("데이터에서 행정구역 정보를 찾을 수 없습니다. CSV 파일 형식을 확인해주세요.")
@@ -102,20 +130,16 @@ if df_total_pop is not None and df_gender_pop is not None:
 
         st.header(f"📍 {selected_district} 인구 현황")
 
-        # 데이터에서 날짜 정보 추출 (컬럼명 기반)
-        # 예: '2025년04월_계_총인구수' 에서 '2025년04월' 추출
         date_prefix_total = ""
-        if df_total_pop.columns[0].startswith("20"): # '20'으로 시작하는 연도 가정
+        if df_total_pop.columns[0].startswith("20"):
             date_prefix_total = df_total_pop.columns[0].split('_')[0] + "_"
         
         date_prefix_gender_male = ""
         date_prefix_gender_female = ""
-        # 남성 데이터 컬럼에서 prefix 찾기
         for col in df_gender_pop.columns:
             if col.startswith("20") and "_남_" in col:
                 date_prefix_gender_male = col.split('_남_')[0] + "_남_"
                 break
-        # 여성 데이터 컬럼에서 prefix 찾기
         for col in df_gender_pop.columns:
             if col.startswith("20") and "_여_" in col:
                 date_prefix_gender_female = col.split('_여_')[0] + "_여_"
@@ -124,11 +148,10 @@ if df_total_pop is not None and df_gender_pop is not None:
         if not selected_district:
             st.warning("분석할 행정구역을 선택해주세요.")
         else:
-            # 1. 총 인구수 (남녀 합계 데이터)
-            st.subheader("1. 총 인구 정보")
             try:
-                total_pop_col_name = f"{date_prefix_total.replace('_','')}계_총인구수" # '2025년04월계_총인구수'
-                # 만약 위 컬럼명이 없다면, 첫번째 '_계_총인구수' 포함 컬럼 사용
+                # 1. 총 인구수 (남녀 합계 데이터)
+                st.subheader("1. 총 인구 정보")
+                total_pop_col_name = f"{date_prefix_total.replace('_','')}계_총인구수"
                 if total_pop_col_name not in df_total_pop.columns:
                     potential_cols = [col for col in df_total_pop.columns if '_계_총인구수' in col]
                     if potential_cols:
@@ -137,65 +160,105 @@ if df_total_pop is not None and df_gender_pop is not None:
                         st.error("총 인구수 컬럼을 찾을 수 없습니다.")
                         total_pop_col_name = None
 
+                current_total_population = 0
                 if total_pop_col_name:
-                    total_population = df_total_pop.loc[selected_district, total_pop_col_name]
-                    st.metric(label=f"{selected_district} 총 인구수 ({date_prefix_total.replace('_','')})", value=f"{total_population:,.0f} 명")
+                    current_total_population = df_total_pop.loc[selected_district, total_pop_col_name]
+                    st.metric(label=f"{selected_district} 총 인구수 ({date_prefix_total.replace('_','')})", value=f"{current_total_population:,.0f} 명")
 
-                # 2. 연령별 인구 분포 (남녀 합계 데이터)
-                st.subheader("2. 연령별 인구 분포 (전체)")
-                
-                # '계'가 포함된 연령 컬럼 prefix 찾기 (예: '2025년04월_계_')
+                # '계'가 포함된 연령 컬럼 prefix 찾기
                 age_col_prefix_total = ""
                 for col in df_total_pop.columns:
-                    if col.startswith(date_prefix_total.replace('_','')) and "_계_" in col and "세" in col: # '2025년04월_계_0세'
-                         age_col_prefix_total = col.split('0세')[0] # '2025년04월_계_'
+                    if col.startswith(date_prefix_total.replace('_','')) and "_계_" in col and "세" in col:
+                         age_col_prefix_total = col.split('0세')[0] 
                          break
-                if not age_col_prefix_total and date_prefix_total: # '2025년04월_계_' 같은 형태가 없을 경우
+                if not age_col_prefix_total and date_prefix_total:
                     age_col_prefix_total = date_prefix_total + "계_"
-
-
+                
                 total_age_cols = get_age_columns(df_total_pop.columns, age_col_prefix_total)
-
-                if not total_age_cols:
-                    st.warning(f"'{age_col_prefix_total}'로 시작하는 연령별 인구 데이터를 찾을 수 없습니다. (남녀 합계 데이터)")
-                else:
+                age_population_total = None
+                if total_age_cols:
                     age_population_total = df_total_pop.loc[selected_district, total_age_cols]
                     age_population_total.index = [col.replace(age_col_prefix_total, '') for col in total_age_cols]
-                    
-                    # 연령대별 그룹화 옵션
-                    group_ages = st.sidebar.checkbox("연령대별 그룹화 (10세 단위)", value=True)
+
+                # 2. 인구 구조 분석 (신규)
+                st.subheader("2. 인구 구조 분석")
+                if age_population_total is not None and not age_population_total.empty:
+                    youth_pop, working_age_pop, elderly_pop, sum_categories = get_population_by_age_category(age_population_total)
+
+                    if sum_categories > 0 : # 인구 합계가 0보다 클 때만 비율 계산
+                        youth_ratio = (youth_pop / sum_categories) * 100
+                        working_age_ratio = (working_age_pop / sum_categories) * 100
+                        elderly_ratio = (elderly_pop / sum_categories) * 100
+
+                        st.markdown("#### 연령대별 인구 비율")
+                        col_struct1, col_struct2, col_struct3 = st.columns(3)
+                        col_struct1.metric("유소년인구 (0-14세)", f"{youth_ratio:.1f}%", f"{youth_pop:,.0f} 명")
+                        col_struct2.metric("생산가능인구 (15-64세)", f"{working_age_ratio:.1f}%", f"{working_age_pop:,.0f} 명")
+                        col_struct3.metric("고령인구 (65세 이상)", f"{elderly_ratio:.1f}%", f"{elderly_pop:,.0f} 명")
+
+                        structure_data = {
+                            '구분': ['유소년인구 (0-14세)', '생산가능인구 (15-64세)', '고령인구 (65세 이상)'],
+                            '인구수': [youth_pop, working_age_pop, elderly_pop]
+                        }
+                        df_structure = pd.DataFrame(structure_data)
+                        fig_structure_pie = px.pie(df_structure, names='구분', values='인구수', 
+                                                   title=f'{selected_district} 인구 구조',
+                                                   color_discrete_sequence=px.colors.qualitative.Pastel)
+                        fig_structure_pie.update_traces(textinfo='percent+label', insidetextorientation='radial')
+                        st.plotly_chart(fig_structure_pie, use_container_width=True)
+                    else:
+                        st.warning("인구 구조 분석을 위한 데이터가 충분하지 않거나 총 인구가 0입니다.")
+
+                else:
+                    st.warning(f"'{age_col_prefix_total}'로 시작하는 연령별 인구 데이터를 찾을 수 없어 인구 구조 분석을 할 수 없습니다. (남녀 합계 데이터)")
+
+
+                # 3. 연령별 인구 분포 (전체)
+                st.subheader("3. 연령별 인구 분포 (전체)")
+                group_ages = st.sidebar.checkbox("연령대별 그룹화 (10세 단위)", value=True) # 사이드바 옵션 유지
+
+                if age_population_total is not None and not age_population_total.empty:
                     if group_ages:
-                        bins = list(range(0, 101, 10)) + [age_population_total.index.map(lambda x: int(re.sub(r'[^0-9]', '', x))).max() + 1]
-                        labels = [f"{bins[i]}-{bins[i+1]-1}세" for i in range(len(bins)-2)] + [f"{bins[-2]}세 이상"]
-                        
-                        age_population_total_grouped = pd.Series(index=labels, dtype='int64').fillna(0)
-                        for age_str, pop in age_population_total.items():
-                            age_val = int(re.sub(r'[^0-9]', '', age_str)) # "80-89세" 등 문자열 처리 대비
-                            for i in range(len(bins)-1):
-                                if bins[i] <= age_val < bins[i+1]:
-                                    age_population_total_grouped[labels[i]] += pop
-                                    break
-                        fig_age_dist_total = px.bar(age_population_total_grouped, 
-                                                    x=age_population_total_grouped.index, 
-                                                    y=age_population_total_grouped.values,
-                                                    labels={'x': '연령대', 'y': '인구수'},
-                                                    title=f"{selected_district} 연령대별 인구 분포")
+                        # 그룹화 로직에서 age_population_total.index.map(...) 부분 수정
+                        # 문자열 인덱스에서 숫자 추출 및 최대값 계산 시 오류 방지
+                        try:
+                            max_age_val = age_population_total.index.map(lambda x: int(re.sub(r'[^0-9]', '', x))).max()
+                            bins = list(range(0, 101, 10)) + [max_age_val + 1]
+                            labels = [f"{bins[i]}-{bins[i+1]-1}세" for i in range(len(bins)-2)] + [f"{bins[-2]}세 이상"]
+                            
+                            age_population_total_grouped = pd.Series(index=labels, dtype='int64').fillna(0)
+                            for age_str, pop in age_population_total.items():
+                                age_val = int(re.sub(r'[^0-9]', '', age_str)) 
+                                for i in range(len(bins)-1):
+                                    if bins[i] <= age_val < bins[i+1]:
+                                        age_population_total_grouped[labels[i]] += pop
+                                        break
+                            fig_age_dist_total = px.bar(age_population_total_grouped, 
+                                                        x=age_population_total_grouped.index, 
+                                                        y=age_population_total_grouped.values,
+                                                        labels={'x': '연령대', 'y': '인구수'},
+                                                        title=f"{selected_district} 연령대별 인구 분포")
+                        except Exception as e:
+                            st.error(f"연령대별 그룹화 중 오류 발생: {e}")
+                            fig_age_dist_total = None # 오류 발생 시 그래프 None
                     else:
                         fig_age_dist_total = px.bar(age_population_total, 
                                                     x=age_population_total.index, 
                                                     y=age_population_total.values,
                                                     labels={'x': '연령', 'y': '인구수'},
                                                     title=f"{selected_district} 세부 연령별 인구 분포")
-                    fig_age_dist_total.update_layout(xaxis_title="연령(대)", yaxis_title="인구수")
-                    st.plotly_chart(fig_age_dist_total, use_container_width=True)
+                    if fig_age_dist_total:
+                        fig_age_dist_total.update_layout(xaxis_title="연령(대)", yaxis_title="인구수")
+                        st.plotly_chart(fig_age_dist_total, use_container_width=True)
+                else:
+                    st.warning(f"'{age_col_prefix_total}'로 시작하는 연령별 인구 데이터를 찾을 수 없습니다. (남녀 합계 데이터)")
 
-                # 3. 성별 인구 정보 (남녀 구분 데이터)
-                st.subheader("3. 성별 인구 정보")
-                
-                male_total_col = f"{date_prefix_gender_male.replace('_남_','')}남_총인구수" # '2025년04월남_총인구수'
-                female_total_col = f"{date_prefix_gender_female.replace('_여_','')}여_총인구수" # '2025년04월여_총인구수'
 
-                # 컬럼명 정확히 일치하지 않을 경우 대비
+                # 4. 성별 인구 정보
+                st.subheader("4. 성별 인구 정보")
+                male_total_col = f"{date_prefix_gender_male.replace('_남_','')}남_총인구수"
+                female_total_col = f"{date_prefix_gender_female.replace('_여_','')}여_총인구수"
+
                 if male_total_col not in df_gender_pop.columns:
                     potential_cols = [col for col in df_gender_pop.columns if '_남_총인구수' in col]
                     if potential_cols: male_total_col = potential_cols[0]
@@ -206,33 +269,46 @@ if df_total_pop is not None and df_gender_pop is not None:
                     if potential_cols: female_total_col = potential_cols[0]
                     else: female_total_col = None
 
+                male_population = 0
+                female_population = 0
+
                 if male_total_col and female_total_col:
                     male_population = df_gender_pop.loc[selected_district, male_total_col]
                     female_population = df_gender_pop.loc[selected_district, female_total_col]
 
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns(3)
                     col1.metric(label=f"남성 총 인구수 ({date_prefix_gender_male.split('_')[0]})", value=f"{male_population:,.0f} 명")
                     col2.metric(label=f"여성 총 인구수 ({date_prefix_gender_female.split('_')[0]})", value=f"{female_population:,.0f} 명")
-
-                    # 4. 인구 피라미드 (남녀 구분 데이터)
-                    st.subheader("4. 인구 피라미드")
-                    male_age_cols = get_age_columns(df_gender_pop.columns, date_prefix_gender_male)
-                    female_age_cols = get_age_columns(df_gender_pop.columns, date_prefix_gender_female)
-
-                    if not male_age_cols or not female_age_cols:
-                        st.warning("남성 또는 여성 연령별 인구 데이터를 찾을 수 없습니다. (남녀 구분 데이터)")
+                    
+                    if female_population > 0:
+                        sex_ratio = (male_population / female_population) * 100
+                        col3.metric(label="성비 (여성 100명당 남성 수)", value=f"{sex_ratio:.1f} 명")
                     else:
-                        male_age_pop = df_gender_pop.loc[selected_district, male_age_cols].rename(lambda x: x.replace(date_prefix_gender_male, ''))
-                        female_age_pop = df_gender_pop.loc[selected_district, female_age_cols].rename(lambda x: x.replace(date_prefix_gender_female, ''))
-                        
-                        # 연령 라벨 통일 (예: '0세', '1세', ... )
-                        age_labels = [col.replace(date_prefix_gender_male, '').replace('세 이상', '세+').replace('세','') for col in male_age_cols]
-                        
-                        # 그룹화 적용
-                        if group_ages:
-                            bins_pyramid = list(range(0, 101, 10)) + [max(male_age_pop.index.map(lambda x: int(re.sub(r'[^0-9]', '', x))).max(), 
-                                                                        female_age_pop.index.map(lambda x: int(re.sub(r'[^0-9]', '', x))).max()) +1]
-                            labels_pyramid = [f"{bins_pyramid[i]}-{bins_pyramid[i+1]-1}" for i in range(len(bins_pyramid)-2)] + [f"{bins_pyramid[-2]}+"]
+                        col3.metric(label="성비", value="N/A (여성 인구 0)")
+                else:
+                    st.warning("남성 또는 여성 총 인구수 컬럼명을 데이터에서 찾을 수 없습니다. (남녀 구분 데이터)")
+
+                # 5. 인구 피라미드
+                st.subheader("5. 인구 피라미드")
+                male_age_cols = get_age_columns(df_gender_pop.columns, date_prefix_gender_male)
+                female_age_cols = get_age_columns(df_gender_pop.columns, date_prefix_gender_female)
+
+                if not male_age_cols or not female_age_cols:
+                    st.warning("남성 또는 여성 연령별 인구 데이터를 찾을 수 없습니다. (남녀 구분 데이터)")
+                else:
+                    male_age_pop = df_gender_pop.loc[selected_district, male_age_cols].rename(lambda x: x.replace(date_prefix_gender_male, ''))
+                    female_age_pop = df_gender_pop.loc[selected_district, female_age_cols].rename(lambda x: x.replace(date_prefix_gender_female, ''))
+                    
+                    age_labels_raw = [col.replace(date_prefix_gender_male, '') for col in male_age_cols] # '0세', '1세', ..., '100세 이상'
+                    
+                    if group_ages:
+                        try:
+                            max_age_val_pyramid = max(
+                                male_age_pop.index.map(lambda x: int(re.sub(r'[^0-9]', '', x))).max(),
+                                female_age_pop.index.map(lambda x: int(re.sub(r'[^0-G]', '', x))).max() # 오타 수정: [^0-9]
+                            )
+                            bins_pyramid = list(range(0, 101, 10)) + [max_age_val_pyramid + 1]
+                            labels_pyramid = [f"{bins_pyramid[i]}-{bins_pyramid[i+1]-1}세" for i in range(len(bins_pyramid)-2)] + [f"{bins_pyramid[-2]}세 이상"]
                             
                             male_age_pop_grouped = pd.Series(index=labels_pyramid, dtype='int64').fillna(0)
                             female_age_pop_grouped = pd.Series(index=labels_pyramid, dtype='int64').fillna(0)
@@ -252,17 +328,19 @@ if df_total_pop is not None and df_gender_pop is not None:
                             y_labels = labels_pyramid
                             male_data = male_age_pop_grouped
                             female_data = female_age_pop_grouped
+                        except Exception as e:
+                            st.error(f"인구 피라미드 그룹화 중 오류 발생: {e}")
+                            y_labels, male_data, female_data = age_labels_raw, male_age_pop, female_age_pop # 오류 시 원본 데이터로 대체
+                    else: 
+                        y_labels = age_labels_raw
+                        male_data = male_age_pop
+                        female_data = female_age_pop
 
-                        else: # 그룹화 안 할 경우
-                            y_labels = age_labels
-                            male_data = male_age_pop
-                            female_data = female_age_pop
-
-
+                    if not male_data.empty and not female_data.empty:
                         fig_pyramid = go.Figure()
                         fig_pyramid.add_trace(go.Bar(
                             y=y_labels,
-                            x=-male_data.values, # 남성 인구는 음수로 표현
+                            x=-male_data.values, 
                             name='남성',
                             orientation='h',
                             marker=dict(color='cornflowerblue')
@@ -274,37 +352,41 @@ if df_total_pop is not None and df_gender_pop is not None:
                             orientation='h',
                             marker=dict(color='lightcoral')
                         ))
+                        
+                        # x축 눈금 자동 조정을 위해 최대값 계산
+                        max_abs_pop = max(abs(male_data.min()), male_data.max(), abs(female_data.min()), female_data.max()) if not male_data.empty and not female_data.empty else 1000
+
                         fig_pyramid.update_layout(
                             title=f'{selected_district} 인구 피라미드{" (10세 단위)" if group_ages else " (세부 연령)"}',
                             yaxis_title='연령(대)',
                             xaxis_title='인구수',
-                            barmode='relative', # 막대를 서로 겹치지 않게 표시 (음수/양수)
+                            barmode='relative', 
                             bargap=0.1,
                             xaxis=dict(
-                                tickvals=[-max(male_data.max(), female_data.max()), 0, max(male_data.max(), female_data.max())], # x축 눈금 설정
-                                ticktext=[f"{max(male_data.max(), female_data.max()):,.0f}", "0", f"{max(male_data.max(), female_data.max()):,.0f}"] # x축 눈금 텍스트
+                                tickvals=[-max_abs_pop, 0, max_abs_pop], 
+                                ticktext=[f"{max_abs_pop:,.0f}", "0", f"{max_abs_pop:,.0f}"] 
                             ),
                             legend_title_text='성별'
                         )
                         st.plotly_chart(fig_pyramid, use_container_width=True)
-                else:
-                    st.warning("남성 또는 여성 총 인구수 컬럼명을 데이터에서 찾을 수 없습니다. (남녀 구분 데이터)")
+                    else:
+                        st.warning("인구 피라미드를 그릴 데이터가 부족합니다.")
 
+
+                # 6. 데이터 테이블 표시
+                st.subheader("6. 데이터 보기")
+                show_total_data = st.checkbox("남녀 합계 데이터 테이블 보기")
+                if show_total_data:
+                    st.dataframe(df_total_pop.loc[[selected_district]])
+                
+                show_gender_data = st.checkbox("남녀 구분 데이터 테이블 보기")
+                if show_gender_data:
+                    st.dataframe(df_gender_pop.loc[[selected_district]])
 
             except KeyError as e:
                 st.error(f"선택된 '{selected_district}'에 대한 데이터를 처리하는 중 오류가 발생했습니다: {e}. CSV 파일의 행정구역명과 컬럼명을 확인해주세요.")
             except Exception as e:
                 st.error(f"데이터 시각화 중 예기치 않은 오류 발생: {e}")
-
-            # 5. 데이터 테이블 표시
-            st.subheader("5. 데이터 보기")
-            show_total_data = st.checkbox("남녀 합계 데이터 테이블 보기")
-            if show_total_data:
-                st.dataframe(df_total_pop.loc[[selected_district]])
-            
-            show_gender_data = st.checkbox("남녀 구분 데이터 테이블 보기")
-            if show_gender_data:
-                st.dataframe(df_gender_pop.loc[[selected_district]])
 else:
     st.error("데이터 파일을 불러오는 데 실패했습니다. 파일 경로와 내용을 확인해주세요.")
 
