@@ -18,15 +18,17 @@ def clean_admin_district_name(name):
             return match.group(1).strip()
     return name
 
-# 데이터 로드 및 전처리 함수
+# 데이터 로드 및 전처리 함수 (URL 지원)
 @st.cache_data # 데이터 로딩 결과를 캐시하여 성능 향상
-def load_data(file_path, is_gender_separated=False):
+def load_data(url, is_gender_separated=False):
     try:
-        df = pd.read_csv(file_path, encoding='cp949') # 한글 인코딩 문제 방지
+        df = pd.read_csv(url, encoding='cp949') # 한글 인코딩 문제 방지
     except UnicodeDecodeError:
-        df = pd.read_csv(file_path, encoding='utf-8')
-    except FileNotFoundError:
-        st.error(f"{file_path} 파일을 찾을 수 없습니다. 동일한 디렉토리에 파일이 있는지 확인하세요.")
+        df = pd.read_csv(url, encoding='utf-8')
+    except Exception as e: # URL 접근 오류 등 다양한 예외 처리
+        st.error(f"데이터를 불러오는 중 오류 발생: {url}")
+        st.error(f"오류 메시지: {e}")
+        st.error("GitHub Raw URL이 정확한지, 파일이 공개되어 있는지 확인해주세요.")
         return None
 
     if df is None: # 파일 로드 실패 시
@@ -66,9 +68,7 @@ def get_population_by_age_category(age_population_series):
     elderly_pop = 0  # 65세 이상
 
     for age_label, pop in age_population_series.items():
-        # age_label is like '0세', '1세', ..., '100세 이상'
         try:
-            # Extract numeric part of age
             age_numeric_str_match = re.match(r"(\d+)", age_label)
             if age_numeric_str_match:
                 age = int(age_numeric_str_match.group(1))
@@ -80,7 +80,7 @@ def get_population_by_age_category(age_population_series):
                 youth_pop += pop
             elif 15 <= age <= 64:
                 working_age_pop += pop
-            elif age >= 65: # This includes '100세 이상' correctly if age is parsed as 100
+            elif age >= 65: 
                 elderly_pop += pop
         except ValueError:
             st.warning(f"연령 라벨 '{age_label}'을(를) 처리하는 중 오류 발생. 이 데이터는 집계에서 제외됩니다.")
@@ -93,32 +93,27 @@ def get_population_by_age_category(age_population_series):
 st.set_page_config(layout="wide", page_title="대한민국 인구 현황 대시보드")
 st.title("📊 대한민국 월별 연령별 인구 현황")
 st.markdown("""
-이 대시보드는 제공된 CSV 데이터를 기반으로 대한민국 행정구역별 인구 현황을 보여줍니다.
-- **데이터 출처**: `202504_202504_연령별인구현황_월간_남녀합계.csv`, `202504_202504_연령별인구현황_월간 _남녀구분.csv` (가상 데이터)
-- **참고**: 실제 데이터를 사용하려면 아래 파일 업로더를 사용하거나 코드 내 파일 경로를 수정하세요.
+이 대시보드는 GitHub에 업로드된 CSV 데이터를 기반으로 대한민국 행정구역별 인구 현황을 보여줍니다.
+- **데이터 출처**: GitHub Raw CSV 파일 (아래 URL 참조)
 """)
 
-# 파일 업로드 기능 (선택 사항)
-uploaded_file_total = st.sidebar.file_uploader("1. 남녀 합계 인구 데이터 (CSV)", type="csv", key="total_pop_uploader")
-uploaded_file_gender = st.sidebar.file_uploader("2. 남녀 구분 인구 데이터 (CSV)", type="csv", key="gender_pop_uploader")
+# --- GitHub Raw CSV URL 설정 ---
+# 중요: 아래 URL을 실제 GitHub Raw 파일 주소로 변경해주세요.
+# 예시: GITHUB_TOTAL_POP_URL = "https://raw.githubusercontent.com/your_username/your_repository/main/path/to/your_total_pop_file.csv"
+GITHUB_TOTAL_POP_URL = "https://raw.githubusercontent.com/Statground/Public-Data-Storage/main/Age_Gender_Population/202504_202504_%EC%97%B0%EB%A0%B9%EB%B3%84%EC%9D%B8%EA%B5%AC%ED%98%84%ED%99%A9_%EC%9B%94%EA%B0%84_%EB%82%A8%EB%85%80%ED%95%A9%EA%B3%84.csv" # 예시 URL, 실제 URL로 변경 필요
+GITHUB_GENDER_POP_URL = "https://raw.githubusercontent.com/Statground/Public-Data-Storage/main/Age_Gender_Population/202504_202504_%EC%97%B0%EB%A0%B9%EB%B3%84%EC%9D%B8%EA%B5%AC%ED%98%84%ED%99%A9_%EC%9B%94%EA%B0%84%20_%EB%82%A8%EB%85%80%EA%B5%AC%EB%B6%84.csv" # 예시 URL, 실제 URL로 변경 필요
 
-DEFAULT_TOTAL_POP_FILE = '202504_202504_연령별인구현황_월간_남녀합계.csv'
-DEFAULT_GENDER_POP_FILE = '202504_202504_연령별인구현황_월간 _남녀구분.csv'
+st.sidebar.markdown("### 데이터 소스")
+st.sidebar.info(f"""
+남녀 합계 데이터: [GitHub Link]({GITHUB_TOTAL_POP_URL})
+남녀 구분 데이터: [GitHub Link]({GITHUB_GENDER_POP_URL})
 
-df_total_pop = None
-df_gender_pop = None
+위 링크의 Raw CSV 파일을 사용합니다.
+""")
 
-if uploaded_file_total:
-    df_total_pop = load_data(uploaded_file_total)
-else:
-    st.sidebar.info(f"남녀 합계 기본 파일: `{DEFAULT_TOTAL_POP_FILE}` 사용 중")
-    df_total_pop = load_data(DEFAULT_TOTAL_POP_FILE)
 
-if uploaded_file_gender:
-    df_gender_pop = load_data(uploaded_file_gender, is_gender_separated=True)
-else:
-    st.sidebar.info(f"남녀 구분 기본 파일: `{DEFAULT_GENDER_POP_FILE}` 사용 중")
-    df_gender_pop = load_data(DEFAULT_GENDER_POP_FILE, is_gender_separated=True)
+df_total_pop = load_data(GITHUB_TOTAL_POP_URL)
+df_gender_pop = load_data(GITHUB_GENDER_POP_URL, is_gender_separated=True)
 
 
 if df_total_pop is not None and df_gender_pop is not None:
@@ -180,12 +175,12 @@ if df_total_pop is not None and df_gender_pop is not None:
                     age_population_total = df_total_pop.loc[selected_district, total_age_cols]
                     age_population_total.index = [col.replace(age_col_prefix_total, '') for col in total_age_cols]
 
-                # 2. 인구 구조 분석 (신규)
+                # 2. 인구 구조 분석
                 st.subheader("2. 인구 구조 분석")
                 if age_population_total is not None and not age_population_total.empty:
                     youth_pop, working_age_pop, elderly_pop, sum_categories = get_population_by_age_category(age_population_total)
 
-                    if sum_categories > 0 : # 인구 합계가 0보다 클 때만 비율 계산
+                    if sum_categories > 0 : 
                         youth_ratio = (youth_pop / sum_categories) * 100
                         working_age_ratio = (working_age_pop / sum_categories) * 100
                         elderly_ratio = (elderly_pop / sum_categories) * 100
@@ -208,19 +203,15 @@ if df_total_pop is not None and df_gender_pop is not None:
                         st.plotly_chart(fig_structure_pie, use_container_width=True)
                     else:
                         st.warning("인구 구조 분석을 위한 데이터가 충분하지 않거나 총 인구가 0입니다.")
-
                 else:
                     st.warning(f"'{age_col_prefix_total}'로 시작하는 연령별 인구 데이터를 찾을 수 없어 인구 구조 분석을 할 수 없습니다. (남녀 합계 데이터)")
 
-
                 # 3. 연령별 인구 분포 (전체)
                 st.subheader("3. 연령별 인구 분포 (전체)")
-                group_ages = st.sidebar.checkbox("연령대별 그룹화 (10세 단위)", value=True) # 사이드바 옵션 유지
+                group_ages = st.sidebar.checkbox("연령대별 그룹화 (10세 단위)", value=True) 
 
                 if age_population_total is not None and not age_population_total.empty:
                     if group_ages:
-                        # 그룹화 로직에서 age_population_total.index.map(...) 부분 수정
-                        # 문자열 인덱스에서 숫자 추출 및 최대값 계산 시 오류 방지
                         try:
                             max_age_val = age_population_total.index.map(lambda x: int(re.sub(r'[^0-9]', '', x))).max()
                             bins = list(range(0, 101, 10)) + [max_age_val + 1]
@@ -240,7 +231,7 @@ if df_total_pop is not None and df_gender_pop is not None:
                                                         title=f"{selected_district} 연령대별 인구 분포")
                         except Exception as e:
                             st.error(f"연령대별 그룹화 중 오류 발생: {e}")
-                            fig_age_dist_total = None # 오류 발생 시 그래프 None
+                            fig_age_dist_total = None 
                     else:
                         fig_age_dist_total = px.bar(age_population_total, 
                                                     x=age_population_total.index, 
@@ -252,7 +243,6 @@ if df_total_pop is not None and df_gender_pop is not None:
                         st.plotly_chart(fig_age_dist_total, use_container_width=True)
                 else:
                     st.warning(f"'{age_col_prefix_total}'로 시작하는 연령별 인구 데이터를 찾을 수 없습니다. (남녀 합계 데이터)")
-
 
                 # 4. 성별 인구 정보
                 st.subheader("4. 성별 인구 정보")
@@ -299,13 +289,13 @@ if df_total_pop is not None and df_gender_pop is not None:
                     male_age_pop = df_gender_pop.loc[selected_district, male_age_cols].rename(lambda x: x.replace(date_prefix_gender_male, ''))
                     female_age_pop = df_gender_pop.loc[selected_district, female_age_cols].rename(lambda x: x.replace(date_prefix_gender_female, ''))
                     
-                    age_labels_raw = [col.replace(date_prefix_gender_male, '') for col in male_age_cols] # '0세', '1세', ..., '100세 이상'
+                    age_labels_raw = [col.replace(date_prefix_gender_male, '') for col in male_age_cols] 
                     
                     if group_ages:
                         try:
                             max_age_val_pyramid = max(
                                 male_age_pop.index.map(lambda x: int(re.sub(r'[^0-9]', '', x))).max(),
-                                female_age_pop.index.map(lambda x: int(re.sub(r'[^0-G]', '', x))).max() # 오타 수정: [^0-9]
+                                female_age_pop.index.map(lambda x: int(re.sub(r'[^0-9]', '', x))).max() 
                             )
                             bins_pyramid = list(range(0, 101, 10)) + [max_age_val_pyramid + 1]
                             labels_pyramid = [f"{bins_pyramid[i]}-{bins_pyramid[i+1]-1}세" for i in range(len(bins_pyramid)-2)] + [f"{bins_pyramid[-2]}세 이상"]
@@ -330,7 +320,7 @@ if df_total_pop is not None and df_gender_pop is not None:
                             female_data = female_age_pop_grouped
                         except Exception as e:
                             st.error(f"인구 피라미드 그룹화 중 오류 발생: {e}")
-                            y_labels, male_data, female_data = age_labels_raw, male_age_pop, female_age_pop # 오류 시 원본 데이터로 대체
+                            y_labels, male_data, female_data = age_labels_raw, male_age_pop, female_age_pop 
                     else: 
                         y_labels = age_labels_raw
                         male_data = male_age_pop
@@ -353,7 +343,6 @@ if df_total_pop is not None and df_gender_pop is not None:
                             marker=dict(color='lightcoral')
                         ))
                         
-                        # x축 눈금 자동 조정을 위해 최대값 계산
                         max_abs_pop = max(abs(male_data.min()), male_data.max(), abs(female_data.min()), female_data.max()) if not male_data.empty and not female_data.empty else 1000
 
                         fig_pyramid.update_layout(
@@ -372,7 +361,6 @@ if df_total_pop is not None and df_gender_pop is not None:
                     else:
                         st.warning("인구 피라미드를 그릴 데이터가 부족합니다.")
 
-
                 # 6. 데이터 테이블 표시
                 st.subheader("6. 데이터 보기")
                 show_total_data = st.checkbox("남녀 합계 데이터 테이블 보기")
@@ -388,7 +376,7 @@ if df_total_pop is not None and df_gender_pop is not None:
             except Exception as e:
                 st.error(f"데이터 시각화 중 예기치 않은 오류 발생: {e}")
 else:
-    st.error("데이터 파일을 불러오는 데 실패했습니다. 파일 경로와 내용을 확인해주세요.")
+    st.error("GitHub에서 데이터 파일을 불러오는 데 실패했습니다. URL과 파일 접근 권한을 확인해주세요.")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("본 대시보드는 Streamlit을 사용하여 제작되었습니다.")
