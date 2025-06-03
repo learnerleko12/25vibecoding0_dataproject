@@ -3,13 +3,6 @@ import yfinance as yf
 import plotly.graph_objs as go
 import pandas as pd
 
-# User-Agent 패치 (yfinance 내부 requests 세션에 직접 추가)
-import requests
-yf.pdr_override()
-session = requests.Session()
-session.headers.update({'User-Agent': 'Mozilla/5.0'})
-yf.shared._requests = session
-
 top_10_tickers = [
     "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA",
     "NVDA", "META", "BRK.B", "V", "JPM"
@@ -23,8 +16,9 @@ error_tickers = []
 
 for ticker in top_10_tickers:
     try:
-        df = yf.download(ticker, period="1y", threads=False)  # threads=False로 변경
-        # 컬럼 구조 확인
+        # threads=False는 yfinance 최신버전에서 병렬 문제를 줄임
+        df = yf.download(ticker, period="1y", threads=False)
+        # 컬럼 구조 출력(디버깅용)
         st.write(f"📊 {ticker} 데이터 구조: {df.columns.tolist()}")
         if not df.empty and "Adj Close" in df.columns:
             data[ticker] = df["Adj Close"]
