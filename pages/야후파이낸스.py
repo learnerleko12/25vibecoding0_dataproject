@@ -16,9 +16,7 @@ error_tickers = []
 
 for ticker in top_10_tickers:
     try:
-        # threads=False는 yfinance 최신버전에서 병렬 문제를 줄임
         df = yf.download(ticker, period="1y", threads=False)
-        # 컬럼 구조 출력(디버깅용)
         st.write(f"📊 {ticker} 데이터 구조: {df.columns.tolist()}")
         if not df.empty and "Adj Close" in df.columns:
             data[ticker] = df["Adj Close"]
@@ -33,7 +31,8 @@ for ticker in top_10_tickers:
         error_tickers.append(ticker)
 
 if data:
-    df_all = pd.DataFrame(data)
+    # Series끼리 outer join으로 통합, 결측치는 그대로 둠
+    df_all = pd.concat(data.values(), axis=1, keys=data.keys()).sort_index()
     fig = go.Figure()
     for ticker in df_all.columns:
         fig.add_trace(go.Scatter(
@@ -47,6 +46,7 @@ if data:
         template="plotly_dark"
     )
     st.plotly_chart(fig, use_container_width=True)
+    st.success(f"성공적으로 데이터를 가져온 티커: {', '.join(data.keys())}")
 else:
     st.error("데이터를 불러오지 못했습니다. (네트워크/야후 정책/환경 문제 가능성)")
 
